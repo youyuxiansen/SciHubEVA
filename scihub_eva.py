@@ -213,6 +213,7 @@ class SciHubEVA(QObject):
 
         if err == SciHubError.BLOCKED_BY_CAPTCHA:
             self.show_captcha(res)
+            # self.download_captcha(res)
         elif self._query_list:
             self.rampage_query_list()
         else:

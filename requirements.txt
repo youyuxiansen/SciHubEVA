@@ -4,3 +4,4 @@ PySide2==5.13.1
 requests==2.22.0
 PySocks==1.7.1
 html2text==2019.9.26
+flask

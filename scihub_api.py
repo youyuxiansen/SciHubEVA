@@ -59,6 +59,7 @@ class SciHubAPI(QObject, threading.Thread):
         self.log = log
         self._callback = callback
         self._rampage_type = rampage_type
+        self._captcha_img_url=None
 
         # Captcha answer, used only when rampage_type == SciHubRampageType.PDF_CAPTCHA_RESPONSE
         if 'captcha_answer' in kwargs:
@@ -246,7 +247,8 @@ class SciHubAPI(QObject, threading.Thread):
 
         pdf, err = None, None
 
-        captcha_id, _ = self.get_captcha_info(pdf_captcha_response)
+        captcha_id, captcha_img_url = self.get_captcha_info(pdf_captcha_response)
+        self._captcha_img_url = captcha_img_url
 
         pdf_response = self._sess.post(
             pdf_captcha_response.url, data={'answer': self._captcha_answer, 'id': captcha_id}, verify=False,
@@ -347,6 +349,34 @@ class SciHubAPI(QObject, threading.Thread):
 
         return pdf_url, err
 
+    def save_captcha_img(self, captcha_img_url, filename):
+        """ save captcha image
+
+        Args:
+            captcha_img_url: Captcha image url
+            filename: captcah_right_answser_after_check
+
+        Returns:
+            Nothing
+
+        """
+        img_path = self._conf.get('common', 'captcha_img_save_path')
+
+        with open(img_path + '{filename}.jpg'.format(filename=filename), 'wb') as f:
+            response = requests.get(captcha_img_url, stream=True)
+
+            if not response.ok:
+                print(response)
+
+            for block in response.iter_content(1024):
+                if not block:
+                    break
+                f.write(block)
+
+        img_link = '<a href="file:///{img_path}/filename">{img_path}</a>'.format(img_path=img_path)
+
+        self.log(self.tr('Saved img as: ') + img_link, logging.INFO)
+
     def save_pdf(self, pdf, filename):
         """Save pdf to local
 
@@ -421,9 +451,14 @@ class SciHubAPI(QObject, threading.Thread):
             elif err is not None:
                 return None, err
 
-            # Save PDF
-            filename = urlparse(pdf_url).path[1:].split('/')[-1]
-            self.save_pdf(pdf, filename)
+            # rampage_mode=='img', skip download pdf
+            if self._conf.get('common', 'rampage_mode') == 'img':
+                self.log(self.tr('download images mode, no captcha, skip download pdf!'), logging.INFO)
+            else:
+                # Save PDF
+                filename = urlparse(pdf_url).path[1:].split('/')[-1]
+                self.save_pdf(pdf, filename)
+
         elif rampage_type == SciHubRampageType.PDF_CAPTCHA_RESPONSE:
             # Query is PDF captcha response (with answer)
 
@@ -433,9 +468,14 @@ class SciHubAPI(QObject, threading.Thread):
                 self.log(self.tr('Wrong captcha, failed to kill Angel [CAPTCHA]!'), logging.ERROR)
                 return None, err
 
-            # Save PDF
-            filename = urlparse(query.url).path[1:].split('/')[-1]
-            self.save_pdf(pdf, filename)
+            # rampage_mode=='img', skip download pdf
+            if self._conf.get('common', 'rampage_mode') == 'img':
+                self.log(self.tr("captcha input right, now saving jpg file '{}'").format(self._captcha_answer), logging.INFO)
+                self.save_captcha_img(self._captcha_img_url, filename=self._captcha_answer)
+            else:
+                # Save PDF
+                filename = urlparse(query.url).path[1:].split('/')[-1]
+                self.save_pdf(pdf, filename)
 
         return None, None
 
